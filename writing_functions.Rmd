@@ -8,6 +8,7 @@ output: github_document
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(rvest)
+library(readxl)
 ```
 
 ## Writing functions 
@@ -45,3 +46,172 @@ z_scores(x = 3)
 z_scores(x = c("my", "name", "is", "Claudia"))
 ```
 
+## A new function 
+```{r}
+mean_and_sd = function(x) {
+  
+  mean_x = mean(x)
+  sd_x = sd(x)
+  
+  out_df = 
+    tibble(
+      mean = mean_x,
+      sd = sd_x
+    )
+  
+  return(out_df)
+}
+
+mean_and_sd(x_vec)
+```
+
+## Check stuff using a simulation 
+
+```{r}
+sim_df = 
+  tibble(
+    x = rnorm(30,10,5)
+  )
+
+sim_df |> 
+  summarize(
+    mean = mean(x),
+    sd = sd(x)
+  )
+```
+
+Simulation function to check sample mean and sd 
+
+```{r}
+sim_mean_sd = function(samp_size, true_mean, true_sd) {
+  sim_df = 
+    tibble(
+      x = rnorm(samp_size, true_mean, true_sd)
+  )
+
+out_df = 
+  sim_df |> 
+  summarize(
+    mean = mean(x),
+    sd = sd(x)
+  )
+
+return(out_df)
+}
+sim_mean_sd(samp_size = 3000, true_mean = 4, true_sd = 12)
+```
+
+## Revisit LoTR words
+
+```{r}
+fellowship_df = 
+  read_excel("data/LoTR_Words.xlsx", range = "B3:D6") |> 
+  mutate(movie = "fellowship") |> 
+  janitor::clean_names()
+
+two_towers_df = 
+  read_excel("data/LoTR_Words.xlsx", range = "F3:H6") |> 
+  mutate(movie = "two_towers") |> 
+  janitor::clean_names()
+
+return_king_df = 
+  read_excel("data/LoTR_Words.xlsx", range = "J3:L6") |> 
+  mutate(movie = "return_king") |> 
+  janitor::clean_names()
+```
+
+Do this using a function instead 
+What are the inputs (stuff that change? like cell range, movie title)
+```{r}
+lotr_import = function(cell_range, movie_title) {
+  
+  movie_df = 
+    read_excel("data/LoTR_Words.xlsx", range = cell_range) |> 
+    mutate(movie = movie_title) |> 
+    janitor::clean_names() |> 
+    pivot_longer(
+      cols = female:male,
+      names_to = "sex",
+      values_to = "words"
+    ) |> 
+    select(movie, everything())
+
+  return(movie_df)
+  
+}
+
+lotr_df = bind_rows(
+  lotr_import(cell_range = "B3:D6", movie_title = "fellowship"),
+  lotr_import(cell_range = "F3:H6", movie_title = "two_towers"),
+  lotr_import(cell_range = "J3:L6", movie_title = "return_king")
+)
+```
+
+## NSDUH
+
+```{r}
+nsduh_url = "http://samhda.s3-us-gov-west-1.amazonaws.com/s3fs-public/field-uploads/2k15StateFiles/NSDUHsaeShortTermCHG2015.htm"
+
+nsduh_html = read_html(nsduh_url)
+
+marj_table = 
+  nsduh_html |> 
+  html_table() |> 
+  nth(1) |> 
+  slice(-1) |> 
+  mutate(drug = "marj")
+
+cocaine_table = 
+  nsduh_html |> 
+  html_table() |> 
+  nth(4) |> 
+  slice(-1) |> 
+  mutate(drug = "cocaine")
+
+heroin_table = 
+  nsduh_html |> 
+  html_table() |> 
+  nth(5) |> 
+  slice(-1) |> 
+  mutate(drug = "heroin")
+```
+
+Function that does data import from NSDUH
+
+```{r}
+drug_import = function(html, nth, drug) {
+
+  out_table = 
+    html |> 
+    html_table() |> 
+    nth(nth) |> 
+    slice(-1) |> 
+    mutate(drug = drug) |> 
+    select(-contains("P Value"))
+  
+  return(out_table)
+}
+drug_table = 
+  bind_rows(
+    drug_import(html = nsduh_html, nth = 1, drug = "marj"),
+    drug_import(html = nsduh_html, nth = 4, drug = "cocaine"),
+    drug_import(html = nsduh_html, nth = 1, drug = "heroin")
+  )
+```
+
+Can also save the function in a source folder (not necessary, but can be more efficient)
+
+```{r}
+source("source/drug_import.R")
+
+drug_table = 
+  bind_rows(
+    drug_import(html = nsduh_html, nth = 1, drug = "marj"),
+    drug_import(html = nsduh_html, nth = 4, drug = "cocaine"),
+    drug_import(html = nsduh_html, nth = 1, drug = "heroin")
+  )
+
+
+```
+
+ˆ
