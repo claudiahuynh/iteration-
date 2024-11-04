@@ -10,9 +10,37 @@ library(tidyverse)
 library(rvest)
 
 ```
+### For loops 
+basic structure is there's a list for the input and the output will output a list. 
+
+### Loop functions 
+are better because you avoid having to define output object. 
+
+### Map functions
+Clarify the loop process 
+The basic structure is `output = map(input, f)`
+
+Map will take an output and return a list 
+If you know what kind of output your function will produce, you can use a specific map variant to help prevent errors and simplify outputs 
+   - `map_dbl`
+   - `map_lgl`
+   - `map_df`
+   
+If you need to iterate over two inputs, you can use map variants to give two input lists/vectors 
+    - `map2`
+    - `map2_dbl`
+    - `map_df`
+    
+### Process 
+     - Write a single example for fixed inputs
+     - Abstract exampe to a function 
+     - Embed function in a loop 
+     - Re-write using a map statement 
+This helps make each step clear, prevent mistakes and only adds complexity when needed
 
 ## Here's some lists 
 
+Different objects inside a list. Can access by index or number entry using square brackets, like `l[["1]]`
 ```{r}
 l = list(
   vec_numeric = 1:4,
@@ -25,7 +53,7 @@ l[["mat"]][1, 3]
 ```
 
 
-Make a list that's hopefully a bit more useful
+Make a list that's hopefully a bit more useful. List of normal samples. Again, access by using `list_norm[["a]]`
 
 ```{r}
 list_norm = 
@@ -84,4 +112,199 @@ for (i in 1:4)  {
 output
 ```
 
+
+## Do the same thing 
+
+but with `map` instead 
+Map takes input list and then take the function (like mean_and_sd) to run to the list
+
+```{r}
+output = map(list_norm, mean_and_sd)
+
+```
+
+Let's do a couple of other things. Map dbl simplifies the output from a list.
+
+Map dfr simplifies the output into a dataframe
+
+```{r}
+output = 
+  map(list_norm, mean_and_sd) |> 
+  bind_rows()
+
+output = map_dfr(list_norm, median)
+output = map_dbl(list_norm, IQR)
+```
+
+## List columns
+Tidy everything up. 
+Put my list into this column of sample
+```{r}
+listcol_df = 
+  tibble(
+    name = c("a", "b", "c", "d"),
+    samp = list_norm
+  )
+
+listcol_df
+
+listcol_df |> 
+  filter(name %in% c("a", "b"))
+
+listcol_df |> 
+  select(-samp)
+```
+
+dataframe can also be a list at the same time
+```{r}
+listcol_df[["samp"]][["a"]]
+```
+
+Compute mean and sd 
+`listcol_df[["samp"]]` is just extracting a list
+```{r eval = FALSE}
+mean_and_sd(listcol_df[["samp"]][["a"]])
+mean_and_sd(listcol_df[["samp"]][["b"]])
+
+map(listcol_df[["samp"]][["a"]])
+```
+
+add a list column. save the column with the output in df. Unnest takes a nested dataframe and unnesting it. 
+
+```{r}
+listcol_df |> 
+  mutate(
+    output = map(samp, mean_and_sd),
+    iqr = map_dbl(samp, IQR)) |> 
+  select(-samp) |> 
+  unnest(output)
+    
+```
+
+### NSDUH 
+Have a df that has the drugs we're looking at in one dataset. 
+
+This is a version of the NSDUH function last time
+
+```{r}
+drug_import = function(html, nth) {
+  
+  out_table = 
+    html |> 
+    html_table() |> 
+    nth(nth) |> 
+    slice(-1) |> 
+    select(-contains("P Value"))
+  
+  return(out_table)
+}
+
+```
+
+We need to import the html, then extract the correct tables
+
+```{r}
+nsduh_url = "http://samhda.s3-us-gov-west-1.amazonaws.com/s3fs-public/field-uploads/2k15StateFiles/NSDUHsaeShortTermCHG2015.htm"
+
+nsduh_html = read_html(nsduh_url)
+
+```
+
+```{r}
+drug_import(html = nsduh_html, nth = 1)
+drug_import(html = nsduh_html, nth = 4)
+drug_import(html = nsduh_html, nth = 5)
+```
+
+Column with marj name, table 1/4/5, and the list column that comes with the df 
+First, make a tibble with the three columns
+```{r}
+nsduh_df = 
+  tibble(
+    drug = c("marj", "cocaine", "heroin"),
+    table_n = c(1,4,5),
+  ) |> 
+  mutate(
+    table = map(table_n, drug_import, html = nsduh_html)
+    ) |> 
+  unnest(table)
+
+nsduh_df |> 
+  filter(State == "New York")
+```
+
+
+Create a list column 
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728", "USW00022534", "USS0023B17S"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2021-01-01",
+    date_max = "2022-12-31") |>
+  mutate(
+    name = recode(
+      id, 
+      USW00094728 = "CentralPark_NY", 
+      USW00022534 = "Molokai_HI",
+      USS0023B17S = "Waterhole_WA"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) |>
+  select(name, id, everything())
+```
+
+List column for each location (NY, HI, WA)
+```{r}
+weather_nest = 
+  weather_df |> 
+  nest(data = date:tmin)
+```
+
+```{r}
+weather_nest[["data"]][[1]]
+```
+
+Let's try regressing tmax on tmin 
+
+```{r}
+lm(tmax ~ tmin, data = weather_nest[["data"]][[1]])
+lm(tmax ~ tmin, data = weather_nest[["data"]][[2]])
+lm(tmax ~ tmin, data = weather_nest[["data"]][[3]])
+```
+
+
+```{r}
+weather_nest |> 
+  mutate(model_fit = map(data, \(x) lm(tmax ~ tmin, data = x)))
+```
+
+Let's define a function that fits the regression I want. weather_lm is the function name with input of df, and fits lm tmax against tmin. Each time you're running this, the input is a new df (1,2,3)
+
+```{r}
+weather_lm = function(df) {
+  
+  lm(tmax~tmin, data = df)
+  
+}
+```
+
+I could run the model using the short function 
+
+```{r}
+weather_lm(weather_nest[["data"]][[1]])
+```
+
+```{r}
+weather_nest |> 
+  mutate(model_fit = map(data, weather_lm))
+
+```
+
+The above is the same as this one:
+
+```{r}
+weather_nest |> 
+  mutate(model_fit = map(data, \(x) lm(tmax ~tmin, data = x)))
+```
 
